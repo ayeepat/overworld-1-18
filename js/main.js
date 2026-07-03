@@ -768,6 +768,12 @@ function frame(now) {
   skyCol.lerp(duskColor, duskness * 0.55);
   scene.background = skyCol;
   world.uniforms.dayLight.value = df;
+  // a lit torch in the off-hand acts as a personal light source, independent
+  // of the static per-block lighting: this only needs a shader-side distance
+  // falloff (no re-meshing) since it moves every frame with the player
+  const handTorch = player.off?.id === B.TORCH;
+  world.uniforms.handLight.value = handTorch ? blockInfo[B.TORCH].light : 0;
+  if (handTorch) world.uniforms.handLightPos.value.set(eye.x, eye.y, eye.z);
   if (player.headInWater) {
     world.uniforms.fogColor.value.setHex(0x1a3a8a);
     world.uniforms.fogNear.value = 1; world.uniforms.fogFar.value = 14;

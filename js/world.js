@@ -28,26 +28,31 @@ class Chunk {
     this.hmap = new Int16Array(CS * CS).fill(Y0);
     this.lights = new Set();
     this.mesh = null; this.wmesh = null;
-    this.dirty = true; this.lightDirty = true;
+    this.dirty = true; this.lightDirty = true; this.everLit = false;
     this.generated = false; this.inScene = false;
   }
 }
 
 const VERT = `
 attribute float skyl; attribute float bll;
-varying vec2 vUv; varying float vS; varying float vB; varying float vDist;
+varying vec2 vUv; varying float vS; varying float vB; varying float vDist; varying vec3 vWorldPos;
 void main(){ vUv=uv; vS=skyl; vB=bll;
-  vec4 mv = modelViewMatrix * vec4(position,1.0);
+  vec4 wp = modelMatrix * vec4(position,1.0);
+  vWorldPos = wp.xyz;
+  vec4 mv = viewMatrix * wp;
   vDist = -mv.z;
   gl_Position = projectionMatrix*mv; }`;
 const FRAG = `
 uniform sampler2D map; uniform float dayLight; uniform vec3 fogColor;
 uniform float fogNear; uniform float fogFar; uniform float alpha; uniform float cutout;
-varying vec2 vUv; varying float vS; varying float vB; varying float vDist;
+uniform vec3 handLightPos; uniform float handLight;
+varying vec2 vUv; varying float vS; varying float vB; varying float vDist; varying vec3 vWorldPos;
 void main(){
   vec4 c = texture2D(map,vUv);
   if(cutout>0.5 && c.a<0.5) discard;
-  float l = max(vB, vS*dayLight)/15.0;
+  float handDist = length(vWorldPos - handLightPos);
+  float handL = max(0.0, handLight - handDist);
+  float l = max(max(vB, vS*dayLight), handL)/15.0;
   l = 0.05 + 0.95*pow(l,1.4);
   float f = smoothstep(fogNear, fogFar, vDist);
   gl_FragColor = vec4(mix(c.rgb*l, fogColor, f), c.a*alpha);
@@ -85,11 +90,13 @@ export class World {
     this.uniforms = {
       dayLight: { value: 1 }, fogColor: { value: new THREE.Color(0x87ceeb) },
       fogNear: { value: viewR * 16 * 0.6 }, fogFar: { value: viewR * 16 * 1.05 },
+      handLightPos: { value: new THREE.Vector3() }, handLight: { value: 0 },
     };
     const mk = (alpha, cutout, transparent) => new THREE.ShaderMaterial({
       uniforms: { map: { value: tex }, alpha: { value: alpha }, cutout: { value: cutout },
         dayLight: this.uniforms.dayLight, fogColor: this.uniforms.fogColor,
-        fogNear: this.uniforms.fogNear, fogFar: this.uniforms.fogFar },
+        fogNear: this.uniforms.fogNear, fogFar: this.uniforms.fogFar,
+        handLightPos: this.uniforms.handLightPos, handLight: this.uniforms.handLight },
       vertexShader: VERT, fragmentShader: FRAG,
       transparent, side: THREE.DoubleSide, depthWrite: !transparent,
     });
@@ -180,9 +187,16 @@ export class World {
     };
     const emitter = blockInfo[old]?.light || blockInfo[id]?.light;
     // boundary edits always need to re-run light BFS on the neighbor, since sky
-    // light now propagates sideways across chunk borders (not just straight down)
-    if (lx === 0) markN(-1, 0, true); if (lx === 15) markN(1, 0, true);
-    if (lz === 0) markN(0, -1, true); if (lz === 15) markN(0, 1, true);
+    // light now propagates sideways across chunk borders (not just straight down).
+    // a column at the exact corner of a chunk touches a diagonal neighbor too
+    // (e.g. lx=0,lz=0 also borders the NW chunk, not just W and N) — missing that
+    // left the diagonal chunk's lighting stale (often solid black) right at the
+    // seam until something else happened to mark it dirty on its own.
+    const dxEdge = lx === 0 ? -1 : lx === 15 ? 1 : 0;
+    const dzEdge = lz === 0 ? -1 : lz === 15 ? 1 : 0;
+    if (dxEdge) markN(dxEdge, 0, true);
+    if (dzEdge) markN(0, dzEdge, true);
+    if (dxEdge && dzEdge) markN(dxEdge, dzEdge, true);
     if (emitter) for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) markN(a, b, true);
     // support checks: things sitting on removed block fall/pop
     if (id === B.AIR || !blockInfo[id]?.solid) {
@@ -500,19 +514,33 @@ export class World {
         gens++;
       }
     }
+    // relight first, in its own budgeted pass, decoupled from mesh readiness
+    // below — a chunk's own light BFS doesn't need its neighbors to have
+    // meshed, only to relight the ones it can currently see. Gating this on
+    // "ready" too would deadlock two adjacent brand-new chunks that each
+    // wait on the other to be lit first.
+    let lights = 0;
     for (const [cx, cz] of want) {
       const c = this.chunks.get(cKey(cx, cz));
       if (!c || !c.generated) continue;
-      // don't mesh until cardinal neighbors that will generate soon exist
+      if (c.lightDirty && lights < budget) { this.relight(c); c.lightDirty = false; lights++; }
+    }
+    for (const [cx, cz] of want) {
+      const c = this.chunks.get(cKey(cx, cz));
+      if (!c || !c.generated) continue;
+      // don't mesh until cardinal neighbors that will generate soon exist AND
+      // have completed at least one relight pass — otherwise this chunk's
+      // boundary faces sample a neighbor's still zero-initialized light
+      // arrays and render solid black until something else happens to mark
+      // this chunk dirty again for a re-mesh.
       let ready = true;
       for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const n = this.chunks.get(cKey(cx + dx, cz + dz));
-        if ((!n || !n.generated) &&
+        if ((!n || !n.generated || !n.everLit) &&
             Math.max(Math.abs(cx + dx - pcx), Math.abs(cz + dz - pcz)) <= R) { ready = false; break; }
       }
       if (!ready) continue;
-      if ((c.lightDirty || c.dirty) && meshes < budget) {
-        if (c.lightDirty) { this.relight(c); c.lightDirty = false; }
+      if (c.dirty && meshes < budget) {
         this.buildMesh(c);
         c.dirty = false;
         meshes++;
@@ -775,6 +803,7 @@ export class World {
         }
       }
     }
+    c.everLit = true;
   }
 
   // ---------- meshing ----------
