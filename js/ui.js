@@ -337,6 +337,28 @@ export class UI {
     this.render();
   }
 
+  furnaceSignature() {
+    const f = this.furnace;
+    return f ? f.items.map(s => s ? s.id + ':' + s.n : '_').join(',') : '';
+  }
+
+  // Called every tick while a furnace is open. A full render() rebuilds every
+  // slot's DOM node from scratch, which — done 20x/second — kept destroying
+  // the slot under the cursor before its mouseenter could refire, making the
+  // hover tooltip flash on and off. Slot contents only actually change a few
+  // times a minute (fuel consumed, item smelted), so only rebuild when that
+  // signature changes; otherwise just nudge the two progress bar widths.
+  updateFurnaceBars() {
+    if (this.open !== 'furnace' || !this.furnace) return;
+    const sig = this.furnaceSignature();
+    if (sig !== this.furnaceSig) { this.render(); return; }
+    const f = this.furnace;
+    const burnBar = $('furnburn')?.firstElementChild;
+    if (burnBar) burnBar.style.width = (f.burnMax ? (f.burn / f.burnMax * 100) | 0 : 0) + '%';
+    const cookBar = $('furncook')?.firstElementChild;
+    if (cookBar) cookBar.style.width = ((f.cook || 0) / 200 * 100 | 0) + '%';
+  }
+
   render() {
     if (!this.open) return;
     this.hideTip(); // slot DOM nodes are about to be replaced; avoid a stale tooltip
@@ -376,16 +398,17 @@ export class UI {
       const row = document.createElement('div'); row.id = 'furnrow';
       const col = document.createElement('div'); col.id = 'furncol';
       col.appendChild(this.makeSlot(this.acc(f.items, 0), { zone: 'ext' }));
-      const burn = document.createElement('div'); burn.className = 'fprog';
+      const burn = document.createElement('div'); burn.className = 'fprog'; burn.id = 'furnburn';
       burn.innerHTML = `<div style="width:${f.burnMax ? (f.burn / f.burnMax * 100) | 0 : 0}%;background:#e83c1c"></div>`;
       col.appendChild(burn);
       col.appendChild(this.makeSlot(this.acc(f.items, 1), { zone: 'ext' }));
       row.appendChild(col);
-      const cook = document.createElement('div'); cook.className = 'fprog';
+      const cook = document.createElement('div'); cook.className = 'fprog'; cook.id = 'furncook';
       cook.innerHTML = `<div style="width:${((f.cook || 0) / 200 * 100) | 0}%"></div>`;
       row.appendChild(cook);
       row.appendChild(this.makeSlot(this.acc(f.items, 2), { zone: 'ext', output: true }));
       top.appendChild(row);
+      this.furnaceSig = this.furnaceSignature();
     } else if (this.open === 'chest') {
       const g = document.createElement('div');
       g.className = 'grid'; g.style.gridTemplateColumns = 'repeat(9,44px)';

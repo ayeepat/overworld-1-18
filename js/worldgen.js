@@ -27,17 +27,29 @@ export class WorldGen {
     if (c) return c;
     const cont = this.cont.fbm2(x * 0.0016, z * 0.0016, 4);
     let h = 66 + cont * 24;
-    const ridgeRaw = 1 - Math.abs(this.mnt.fbm2(x * 0.0025, z * 0.0025, 4));
-    const ridge = Math.pow(Math.max(0, ridgeRaw), 3);
-    const mMask = Math.min(1, Math.max(0, this.mask.fbm2(x * 0.0011 + 100, z * 0.0011) - 0.08) * 2.4);
-    const mh = ridge * 135 * mMask;
+    // ridged noise (1-|noise|) makes sharp mountain spines. The steepness comes
+    // mostly from the FINE octaves (each doubling frequency adds detail on a
+    // shorter wavelength), so a lower fbm gain — which weights those fine
+    // octaves down — smooths short-distance jaggedness far more effectively
+    // than just lowering the overall amplitude or exponent did.
+    const ridgeRaw = 1 - Math.abs(this.mnt.fbm2(x * 0.0016, z * 0.0016, 4, 2, 0.35));
+    const ridge = Math.pow(Math.max(0, ridgeRaw), 1.4);
+    const mMask = Math.min(1, Math.max(0, this.mask.fbm2(x * 0.0011 + 100, z * 0.0011) - 0.05) * 1.5);
+    const mh = ridge * 80 * mMask;
     h += mh;
     const rv = Math.abs(this.riv.fbm2(x * 0.0011 + 55, z * 0.0011 - 33, 3));
     let river = false;
-    if (rv < 0.03 && mh < 25) {
+    if (rv < 0.03) {
+      // river strength used to cut off hard at mh===25 — right at that
+      // boundary a column could go from "carved to ~63" to "full mountain
+      // height" between two adjacent samples, a 30+ block cliff out of
+      // nowhere. Fading it out smoothly as terrain gets hillier removes that
+      // discontinuity entirely instead of just moving it around.
       const t = 1 - rv / 0.03;
-      const carved = 66 - t * 7;
-      if (carved < h) { h = carved; river = h < SEA + 0.5; }
+      const riverStrength = Math.max(0, 1 - mh / 25);
+      const pull = t * riverStrength;
+      const carved = h - pull * (h - 59);
+      if (carved < h) { h = carved; river = pull > 0.4 && h < SEA + 0.5; }
     }
     h = Math.round(Math.max(Y0 + 10, Math.min(YMAX - 12, h)));
     let temp = this.tmp.fbm2(x * 0.0009 + 7, z * 0.0009, 3) - Math.max(0, h - 90) * 0.004;
@@ -45,8 +57,8 @@ export class WorldGen {
     let biome;
     if (h < SEA - 3) biome = BIOME.OCEAN;
     else if (river) biome = BIOME.RIVER;
-    else if (h >= 150 || (h > 118 && temp < -0.35)) biome = BIOME.PEAKS;
-    else if (mh > 42) biome = BIOME.MOUNTAIN;
+    else if (h >= 130 || (h > 105 && temp < -0.35)) biome = BIOME.PEAKS;
+    else if (mh > 26) biome = BIOME.MOUNTAIN;
     else if (h <= SEA + 1) biome = BIOME.BEACH;
     else if (temp > 0.32 && moist < 0.05) biome = BIOME.DESERT;
     else if (moist > 0.22) biome = temp < -0.18 ? BIOME.TAIGA : BIOME.FOREST;

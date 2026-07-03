@@ -28,7 +28,6 @@ let paused = false;
 let worldSpawn = null;
 const keys = {};
 let mouseL = false, mouseR = false, rmbRepeat = 0;
-let eating = 0;
 let mining = { x: null, y: null, z: null, prog: 0 };
 let fpsAcc = 0, fpsN = 0, fps = 0;
 let debugOn = false;
@@ -222,7 +221,7 @@ function startGame(seedStr, rdist, opts = {}) {
     ui.msg('Punch a tree to get wood!');
     canvas.requestPointerLock();
   };
-  window.__game = { get world() { return world; }, get player() { return player; }, get ui() { return ui; }, step: () => loadStep && loadStep(), tick: () => tick(), get paused() { return paused; }, get gameState() { return state; }, simFrame: (nowMs) => frame(nowMs) };
+  window.__game = { get world() { return world; }, get player() { return player; }, get ui() { return ui; }, step: () => loadStep && loadStep(), tick: () => tick(), get paused() { return paused; }, get gameState() { return state; }, simFrame: (nowMs) => frame(nowMs), interact: () => interact() };
   loadStep();
 }
 
@@ -257,7 +256,7 @@ canvas.addEventListener('mousedown', e => {
 });
 addEventListener('mouseup', e => {
   if (e.button === 0) { mouseL = false; mining.prog = 0; }
-  if (e.button === 2) { mouseR = false; eating = 0; player.blocking = false; }
+  if (e.button === 2) { mouseR = false; player.blocking = false; }
 });
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('pointerlockchange', () => {
@@ -479,8 +478,15 @@ function interact() {
     }
   }
 
-  // 3. food -> start eating (handled per-frame)
-  if (hInfo?.food && player.hunger < 20) { eating = 0.01; return; }
+  // 3. food -> eat instantly, one tap (same feel as placing a block)
+  if (hInfo?.food && player.hunger < 20) {
+    player.hunger = Math.min(20, player.hunger + hInfo.food.h);
+    player.sat = Math.min(player.hunger, player.sat + hInfo.food.sat);
+    player.consumeHeld(1);
+    sfx('eat');
+    ui.updateHUD();
+    return;
+  }
 
   // 4. hoe -> farmland
   if (hInfo?.tool?.kind === 'hoe' && hit) {
@@ -601,24 +607,6 @@ function trySleep(hit) {
   }, 1200);
 }
 
-// ---------- eating (per frame while RMB held on food) ----------
-function updateEating(dt) {
-  if (eating <= 0) return;
-  const held = player.heldStack();
-  const f = held ? itemInfo[held.id]?.food : null;
-  if (!mouseR || !f || player.hunger >= 20) { eating = 0; return; }
-  eating += dt;
-  if (eating % 0.3 < dt) sfx('eat');
-  if (eating >= 1.6) {
-    eating = 0;
-    player.hunger = Math.min(20, player.hunger + f.h);
-    player.sat = Math.min(player.hunger, player.sat + f.sat);
-    player.consumeHeld(1);
-    sfx('eat');
-    ui.updateHUD();
-  }
-}
-
 // ---------- mob spawning ----------
 function spawnTick() {
   // drain worldgen passive queue
@@ -712,7 +700,7 @@ function tick() {
     $('death').classList.remove('hidden');
     document.exitPointerLock?.();
   }
-  if (ui.isOpen() && ui.open === 'furnace') ui.render();
+  if (ui.isOpen() && ui.open === 'furnace') ui.updateFurnaceBars();
   ui.updateHUD();
 }
 
@@ -746,10 +734,9 @@ function frame(now) {
     if (!ui.isOpen() && !player.dead) {
       player.moveFrame(dt, inputState());
       updateMining(dt);
-      updateEating(dt);
       if (mouseR) {
         rmbRepeat -= dt;
-        if (rmbRepeat <= 0 && eating <= 0 && !player.blocking) { rmbRepeat = 0.25; if (!tryFeedMob()) interact(); }
+        if (rmbRepeat <= 0 && !player.blocking) { rmbRepeat = 0.25; if (!tryFeedMob()) interact(); }
       }
     }
     world.update(player.pos.x, player.pos.z, 2);
