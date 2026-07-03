@@ -252,7 +252,7 @@ canvas.addEventListener('mousedown', e => {
   if (state !== 'playing' || paused) return;
   if (document.pointerLockElement !== canvas) { canvas.requestPointerLock(); return; }
   if (e.button === 0) { mouseL = true; tryAttack(); }
-  if (e.button === 2) { mouseR = true; rmbRepeat = 0; interact(); }
+  if (e.button === 2) { mouseR = true; rmbRepeat = 0.25; interact(); }
 });
 addEventListener('mouseup', e => {
   if (e.button === 0) { mouseL = false; mining.prog = 0; }
@@ -609,14 +609,21 @@ function trySleep(hit) {
 
 // ---------- mob spawning ----------
 function spawnTick() {
-  // drain worldgen passive queue
+  // drain worldgen passive queue. Villages queue their villagers/golems the
+  // moment the first overlapping chunk populates, which can happen while the
+  // player is still well outside spawn range (a village's footprint reaches
+  // up to 64 blocks from its trigger chunk). Entries still out of range are
+  // kept for a later attempt instead of being dropped, otherwise those
+  // villagers/golems would be lost forever the instant they're queued.
+  const stillFar = [];
   while (world.spawnQueue.length) {
     const s = world.spawnQueue.pop();
-    if (Math.hypot(s.x - player.pos.x, s.z - player.pos.z) >= world.viewR * 16 + 16) continue;
+    if (Math.hypot(s.x - player.pos.x, s.z - player.pos.z) >= world.viewR * 16 + 16) { stillFar.push(s); continue; }
     if (s.type === 'villager') world.entities.push(new Villager(world, s.x, s.y, s.z, { profession: s.profession, bed: s.bed, village: s.village }));
     else if (s.type === 'iron_golem') world.entities.push(new IronGolem(world, s.x, s.y, s.z, { village: s.village }));
     else spawnMob(world, s.type, s.x, s.y, s.z);
   }
+  world.spawnQueue = stillFar;
   const mobs = world.entities.filter(e => e instanceof Mob);
   const hostiles = mobs.filter(m => m.spec.hostile);
   // despawn far hostiles

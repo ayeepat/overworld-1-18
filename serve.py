@@ -1,4 +1,4 @@
-import http.server, functools, os
+import http.server, functools, os, sys
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
@@ -9,4 +9,5 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
-http.server.ThreadingHTTPServer(('127.0.0.1', 8123), Handler).serve_forever()
+port = int(sys.argv[1]) if len(sys.argv) > 1 else 8123
+http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()

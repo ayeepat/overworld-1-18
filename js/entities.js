@@ -556,13 +556,15 @@ export class Villager extends Entity {
       this.sleeping = true;
       // beds sit behind a door, and this AI has no real pathfinding — heading
       // straight for the bed makes villagers walk into the exterior wall and
-      // get stuck. The door block itself is SOLID while closed (only the open
-      // DOOR_OPEN variant isn't), so the only actually-passable column is the
-      // one widenDoorway() cleared next to it — a gap exactly 1 block wide.
-      // Direct-line steering can't reliably thread that without occasionally
-      // wedging into the wall beside it, so lateral alignment into the gap is
-      // snapped directly (bypassing collision, since the column is known-open)
-      // while forward progress through it still goes through normal physics.
+      // get stuck. Every entrance is a double door (see widenDoorway()); the
+      // second leaf starts open, so the reliably-passable column is that one
+      // (the main door defaults closed). Direct-line steering can't reliably
+      // thread a 1-wide column without occasionally wedging into the wall
+      // beside it, so lateral alignment into that column is snapped directly
+      // (bypassing collision, since it's known-open by default) while forward
+      // progress through it still goes through normal physics. If a player
+      // shuts that second door, this simple AI has no way to reopen it and
+      // may get stuck there, same as at any other closed door.
       const doorZ = this.bed.door?.z, doorX = this.bed.door?.x;
       const gapCenterX = doorX + 1.5;
       if (doorZ !== undefined && Math.abs(this.pos.z - (doorZ + 0.5)) < 2.5 && Math.abs(this.pos.x - gapCenterX) > 0.03) {

@@ -395,12 +395,17 @@ export class WorldGen {
   }
 
   // a single 1-wide door is too tight for an entity hitbox plus imprecise
-  // steering (no real pathfinding here) — clear the column next to the door
-  // too, so villagers/golems can actually walk through without clipping the
-  // adjacent wall block
-  widenDoorway(sbW, doorX, doorZ, y) {
-    sbW(doorX + 1, y + 1, doorZ, B.AIR);
-    sbW(doorX + 1, y + 2, doorZ, B.AIR);
+  // steering (no real pathfinding here), so every entrance gets a second,
+  // real door leaf right next to the main one (a proper double door) rather
+  // than a bare hole punched in the wall. It starts open so villagers/golems
+  // can walk straight through, but it's still a normal openable/closable
+  // door block — if the player swings it shut, mobs can get briefly stuck
+  // there same as they can at any closed door, since there's no pathfinding.
+  widenDoorway(sbW, world, doorX, doorZ, y) {
+    const wx = doorX + 1;
+    sbW(wx, y + 1, doorZ, B.DOOR_OPEN); sbW(wx, y + 2, doorZ, B.DOOR_OPEN);
+    world.meta.set(world.keyOf(wx, y + 1, doorZ), { door: { top: false } });
+    world.meta.set(world.keyOf(wx, y + 2, doorZ), { door: { top: true } });
   }
 
   // 5x5, single door, one bed — the smallest village dwelling
@@ -412,7 +417,7 @@ export class WorldGen {
     sbW(doorX, y + 1, doorZ, B.DOOR); sbW(doorX, y + 2, doorZ, B.DOOR);
     world.meta.set(world.keyOf(doorX, y + 1, doorZ), { door: { top: false } });
     world.meta.set(world.keyOf(doorX, y + 2, doorZ), { door: { top: true } });
-    this.widenDoorway(sbW, doorX, doorZ, y);
+    this.widenDoorway(sbW, world, doorX, doorZ, y);
     sbW(x0 + 1, y + 1, z0 + d - 2, B.BED); sbW(x0 + 1, y + 1, z0 + d - 3, B.BED);
     world.meta.set(world.keyOf(x0 + 1, y + 1, z0 + d - 2), { bed: { head: false } });
     world.meta.set(world.keyOf(x0 + 1, y + 1, z0 + d - 3), { bed: { head: true } });
@@ -430,7 +435,7 @@ export class WorldGen {
     sbW(doorX, y + 1, doorZ, B.DOOR); sbW(doorX, y + 2, doorZ, B.DOOR);
     world.meta.set(world.keyOf(doorX, y + 1, doorZ), { door: { top: false } });
     world.meta.set(world.keyOf(doorX, y + 2, doorZ), { door: { top: true } });
-    this.widenDoorway(sbW, doorX, doorZ, y);
+    this.widenDoorway(sbW, world, doorX, doorZ, y);
     sbW(x0, y + 2, z0 + (d >> 1), B.GLASS); sbW(x0 + w - 1, y + 2, z0 + (d >> 1), B.GLASS);
     sbW(x0 + 1, y + 1, z0 + d - 2, B.BED); sbW(x0 + 1, y + 1, z0 + d - 3, B.BED);
     world.meta.set(world.keyOf(x0 + 1, y + 1, z0 + d - 2), { bed: { head: false } });
@@ -472,7 +477,7 @@ export class WorldGen {
     sbW(doorX, y + 1, doorZ, B.DOOR); sbW(doorX, y + 2, doorZ, B.DOOR);
     world.meta.set(world.keyOf(doorX, y + 1, doorZ), { door: { top: false } });
     world.meta.set(world.keyOf(doorX, y + 2, doorZ), { door: { top: true } });
-    this.widenDoorway(sbW, doorX, doorZ, y);
+    this.widenDoorway(sbW, world, doorX, doorZ, y);
     sbW(x0 + (w >> 1), y + 1, z0 + d - 2, JOB_BLOCK[job] ?? B.COMPOSTER);
     sbW(x0 + 1, y + 2, z0 + 1, B.TORCH);
   }
