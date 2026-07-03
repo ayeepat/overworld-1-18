@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Overworld 1.18</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; -webkit-user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden; background:#000;
+    font-family:"Courier New", monospace; }
+  #game { display:block; width:100vw; height:100vh; }
+  .hidden { display:none !important; }
+  .screen { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; z-index:40; color:#eee; }
+  #menu, #pause, #death { background:rgba(10,10,14,0.86); }
+  #death { background:rgba(120,0,0,0.55); }
+  h1 { font-size:52px; letter-spacing:4px; color:#fff; text-shadow:3px 3px 0 #3f3f3f; }
+  .sub { color:#ff5; font-size:14px; margin-bottom:18px; }
+  #worldlist { width:320px; max-height:160px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+  #worldlist:empty { display:none; }
+  .wentry { display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.06);
+    border:1px solid #555; padding:6px 8px; }
+  .wentry .wname { flex:1; font-size:13px; color:#eee; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wentry .wmeta { font-size:10px; color:#999; }
+  .wentry button { min-width:0; padding:4px 10px; font-size:12px; }
+  .wentry .wdel { background:#7a2a2a; }
+  button { font-family:inherit; font-size:16px; padding:10px 26px; min-width:320px;
+    background:#6f6f6f; color:#fff; border:2px solid #000; outline:2px solid #a8a8a8; outline-offset:-4px;
+    cursor:pointer; text-shadow:2px 2px 0 #383838; }
+  button:hover { background:#8a8aa0; }
+  input, select { font-family:inherit; font-size:15px; padding:8px 12px; width:320px;
+    background:#111; color:#eee; border:2px solid #888; }
+  label { font-size:13px; color:#bbb; }
+
+  #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
+  #crosshair { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    color:#fff; font-size:22px; mix-blend-mode:difference; }
+  #breakbar { position:absolute; left:50%; top:54%; transform:translateX(-50%);
+    width:90px; height:8px; background:rgba(0,0,0,0.5); border:1px solid #222; display:none; }
+  #breakfill { height:100%; width:0%; background:#e6e6e6; }
+  #bars { position:absolute; left:50%; bottom:8px; transform:translateX(-50%);
+    display:flex; flex-direction:column; align-items:center; gap:3px; }
+  #statrows { width:378px; display:flex; justify-content:space-between; font-size:16px;
+    text-shadow:1px 1px 0 #000; }
+  #hearts { color:#ff2020; letter-spacing:1px; }
+  #hunger { color:#c76f28; letter-spacing:1px; direction:rtl; }
+  #bubbles { position:absolute; right:0; bottom:64px; color:#66aaff; font-size:15px;
+    letter-spacing:2px; text-shadow:1px 1px 0 #000; }
+  #xpwrap { width:378px; height:7px; background:#1c1c1c; border:1px solid #000; position:relative; }
+  #xpfill { height:100%; width:0%; background:#7fe832; }
+  #xplevel { position:absolute; left:50%; top:-16px; transform:translateX(-50%);
+    color:#7fe832; font-weight:bold; font-size:14px; text-shadow:1px 1px 0 #000; }
+  #hotbar { display:flex; }
+  .hslot { width:42px; height:42px; background:rgba(30,30,30,0.75); border:2px solid #555;
+    position:relative; }
+  .hslot.sel { border-color:#fff; }
+  .slotimg { width:100%; height:100%; image-rendering:pixelated; }
+  .slotn { position:absolute; right:2px; bottom:0; color:#fff; font-size:13px; font-weight:bold;
+    text-shadow:1px 1px 0 #000; }
+  .slotdur { position:absolute; left:3px; right:3px; bottom:3px; height:3px; background:#300; }
+  .slotdur > div { height:100%; background:#3f3; }
+  #hudmsg { position:absolute; left:50%; bottom:96px; transform:translateX(-50%);
+    color:#fff; font-size:16px; text-shadow:1px 1px 0 #000; opacity:0; transition:opacity .5s; }
+  #debug { position:absolute; left:8px; top:8px; color:#fff; font-size:12px; line-height:1.5;
+    text-shadow:1px 1px 0 #000; white-space:pre; display:none; }
+  #damagefx { position:absolute; inset:0; background:radial-gradient(ellipse at center,
+    rgba(255,0,0,0) 55%, rgba(255,0,0,0.55) 100%); opacity:0; transition:opacity .35s; }
+  #sleepfade { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none;
+    transition:opacity 1s; z-index:60; }
+  #vignette-water { position:absolute; inset:0; background:rgba(20,60,160,0.35); display:none; }
+
+  #invscreen { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:30;
+    display:flex; align-items:center; justify-content:center; }
+  #invpanel { background:#c6c6c6; border:3px solid #000; outline:3px solid #fff; outline-offset:-6px;
+    padding:16px 18px; color:#3f3f3f; }
+  #invtitle { font-size:15px; font-weight:bold; margin-bottom:8px; }
+  #tradewrap { width:360px; margin-bottom:10px; }
+  #tradeemeralds { display:flex; align-items:center; gap:6px; margin-bottom:10px; font-size:14px; font-weight:bold; }
+  #tradeemeralds img { width:24px; height:24px; image-rendering:pixelated; }
+  .traderow { display:flex; align-items:center; gap:8px; background:#b0b0b0; border:1px solid #6f6f6f;
+    padding:6px 8px; margin-bottom:5px; }
+  .traderow-empty { color:#555; font-size:13px; padding:10px 0; }
+  .tradeitem { display:flex; align-items:center; gap:4px; font-size:13px; }
+  .tradeitem img { width:28px; height:28px; image-rendering:pixelated; }
+  .tradearrow { font-size:18px; }
+  .tradebtn { flex:1; min-width:0; padding:6px 8px; font-size:12px; }
+  .tradebtn:disabled { background:#555; color:#999; cursor:not-allowed; }
+  .grid { display:grid; gap:3px; margin-bottom:10px; }
+  .slot { width:44px; height:44px; background:#8b8b8b; border:2px solid;
+    border-color:#373737 #fff #fff #373737; position:relative; cursor:pointer; }
+  .slot.result { outline:2px solid #d8b21c; }
+  #furnrow { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+  #furncol { display:flex; flex-direction:column; gap:6px; align-items:center; }
+  .fprog { width:60px; height:10px; background:#555; }
+  .fprog > div { height:100%; background:#e88a1c; width:0%; }
+  #craftarrow { font-size:26px; color:#3f3f3f; padding:0 8px; }
+  .rowflex { display:flex; align-items:center; }
+  #cursoritem { position:fixed; width:40px; height:40px; pointer-events:none; z-index:99;
+    display:none; }
+  #cursoritem img { width:100%; height:100%; image-rendering:pixelated; }
+  #cursoritem span { position:absolute; right:0; bottom:-2px; color:#fff; font-size:13px;
+    font-weight:bold; text-shadow:1px 1px 0 #000; }
+  #tooltip { position:fixed; z-index:120; display:none; pointer-events:none;
+    background:#100010; border:2px solid #4a3d7a; outline:2px solid #6b5cb8; outline-offset:-4px;
+    color:#fff; font-size:13px; padding:5px 9px; white-space:nowrap; }
+  #loading { background:rgba(10,10,14,0.95); }
+  #loadbarw { width:340px; height:14px; border:2px solid #888; background:#111; }
+  #loadbar { height:100%; width:0%; background:#3fa33f; }
+  .hint { color:#999; font-size:12px; max-width:520px; text-align:center; line-height:1.6; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="crosshair">+</div>
+  <div id="breakbar"><div id="breakfill"></div></div>
+  <div id="bars">
+    <div id="statrows">
+      <span id="hearts"></span>
+      <span id="hunger"></span>
+    </div>
+    <div id="xpwrap"><div id="xpfill"></div><div id="xplevel"></div></div>
+    <div id="hotbar"></div>
+    <span id="bubbles"></span>
+  </div>
+  <div id="hudmsg"></div>
+  <div id="debug"></div>
+  <div id="damagefx"></div>
+  <div id="vignette-water"></div>
+</div>
+
+<div id="invscreen" class="hidden">
+  <div id="invpanel">
+    <div id="invtitle">Inventory</div>
+    <div id="topzone"></div>
+    <div id="maingrid" class="grid" style="grid-template-columns:repeat(9,44px)"></div>
+    <div id="hotgrid" class="grid" style="grid-template-columns:repeat(9,44px)"></div>
+  </div>
+</div>
+<div id="cursoritem"><img><span></span></div>
+<div id="tooltip"></div>
+
+<div id="menu" class="screen">
+  <h1>OVERWORLD</h1>
+  <div class="sub">a Minecraft 1.18 (Caves &amp; Cliffs) replica &mdash; Overworld only</div>
+  <div id="worldlist"></div>
+  <input id="worldname" placeholder="World name (blank = auto)">
+  <input id="seed" placeholder="World seed (blank = random)">
+  <label>Render distance:
+    <select id="rdist">
+      <option value="3">3 chunks (fast)</option>
+      <option value="4" selected>4 chunks</option>
+      <option value="5">5 chunks</option>
+      <option value="6">6 chunks (slow)</option>
+    </select>
+  </label>
+  <button id="playbtn">Singleplayer &mdash; Generate New World</button>
+  <div class="hint">WASD move &middot; Space jump &middot; Ctrl sprint &middot; Shift sneak &middot; E inventory &middot;
+    Left-click mine/attack &middot; Right-click place/use &middot; Q drop &middot; 1-9 hotbar &middot; F3 debug &middot; Esc pause</div>
+</div>
+
+<div id="loading" class="screen hidden">
+  <h1 style="font-size:26px">Generating world…</h1>
+  <div id="loadbarw"><div id="loadbar"></div></div>
+</div>
+
+<div id="pause" class="screen hidden">
+  <h1 style="font-size:30px">Game Paused</h1>
+  <button id="resumebtn">Resume Game</button>
+  <button id="quitbtn">Save and Quit to Title</button>
+</div>
+
+<div id="death" class="screen hidden">
+  <h1>You Died!</h1>
+  <div id="deathscore" class="sub"></div>
+  <button id="respawnbtn">Respawn</button>
+  <button id="respawndeathbtn">Respawn at Death Spot</button>
+  <button id="titlebtn">Title Screen</button>
+</div>
+
+<div id="sleepfade"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
