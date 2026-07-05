@@ -276,6 +276,7 @@ $('playbtn').onclick = () => {
   saveWorld(); // persist immediately so the world shows up in the list even before quitting
 };
 $('resumebtn').onclick = () => { paused = false; $('pause').classList.add('hidden'); canvas.requestPointerLock(); };
+$('keepinvchk').onchange = () => { if (player) player.keepInventory = $('keepinvchk').checked; };
 $('quitbtn').onclick = () => { saveWorld(); location.reload(); };
 renderWorldList();
 $('titlebtn').onclick = () => { saveWorld(); location.reload(); };

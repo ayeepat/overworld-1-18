@@ -279,7 +279,7 @@ export class World {
     if (id !== B.WATER && id !== B.LAVA) return;
     const isLava = id === B.LAVA;
     const nk = numKey(x, y, z);
-    const hasEntry = this.flu.has(nk);
+    let hasEntry = this.flu.has(nk);
     const lv = hasEntry ? this.flu.get(nk) : 8;
     // lava + water contact
     if (isLava) {
@@ -295,6 +295,16 @@ export class World {
       // water sitting on a lava source -> obsidian handled from lava side; water flowing onto lava below:
       const below = this.getBlock(x, y - 1, z);
       if (below === B.LAVA) this.schedFluid(x, y - 1, z, 2);
+      // a flowing block touching 2+ source neighbors becomes a source itself —
+      // the vanilla rule that turns e.g. a 2x2 diagonally-poured pool into a
+      // stable infinite source, instead of one that quietly drains away once
+      // the two originally-poured source blocks get scooped out
+      if (hasEntry) {
+        let sources = 0;
+        for (const [dx, dz] of [[1,0],[-1,0],[0,1],[0,-1]])
+          if (this.getBlock(x + dx, y, z + dz) === B.WATER && this.isSource(x + dx, y, z + dz)) sources++;
+        if (sources >= 2) { this.flu.delete(nk); hasEntry = false; }
+      }
     }
     // support check for flowing blocks
     if (hasEntry) {

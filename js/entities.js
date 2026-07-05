@@ -597,6 +597,7 @@ export class Villager extends Entity {
       const hv = Math.hypot(this.vel.x, this.vel.z);
       if (hv > speed) { this.vel.x *= speed / hv; this.vel.z *= speed / hv; }
       if (this.hitWall && this.onGround) this.vel.y = 8;
+      if (this.inWater) this.vel.y = Math.max(this.vel.y, 2); // swim up — otherwise a villager that falls in water can never climb back out
     }
     stepPhysics(this, w, dt, 30);
     if (this.pos.y < -70) return this.remove();
@@ -709,6 +710,7 @@ export class IronGolem extends Entity {
       const hv = Math.hypot(this.vel.x, this.vel.z);
       if (hv > speed) { this.vel.x *= speed / hv; this.vel.z *= speed / hv; }
       if (this.hitWall && this.onGround) this.vel.y = 9;
+      if (this.inWater) this.vel.y = Math.max(this.vel.y, 2); // swim up — otherwise a golem that falls in water can never climb back out
     }
     stepPhysics(this, w, dt, 32);
     if (this.pos.y < -70) return this.remove();

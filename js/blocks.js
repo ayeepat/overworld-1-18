@@ -30,7 +30,8 @@ export const I = {
 export const TIERS = ['wood', 'stone', 'iron', 'diamond'];
 export const KINDS = ['pickaxe', 'axe', 'shovel', 'sword', 'hoe'];
 export const toolId = (tier, kind) => 140 + tier * 5 + kind;
-export const armorId = (mat, slot) => (mat === 'iron' ? 161 : 165) + slot; // slot 0-3 helm..boots
+const ARMOR_BASE = { iron: 161, leather: 165, diamond: 169 };
+export const armorId = (mat, slot) => ARMOR_BASE[mat] + slot; // slot 0-3 helm..boots
 
 const T = TILES;
 // blockInfo[id] = {name, hard, tool, tier, tiles:{top,side,bot}, kind, opaque, light, drop(rng)->[stacks]}
@@ -160,24 +161,34 @@ defI(I.BED_ITEM, 'Bed', T.i_bed, { stack: 1, place: B.BED });
 defI(I.DOOR_ITEM, 'Oak Door', T.i_door, { place: B.DOOR });
 defI(I.SHIELD, 'Shield', T.i_shield, { stack: 1, shield: true, dur: 336 });
 
+// stats verified against Java Edition's tool-tier and weapon tables (mining
+// speed, durability, attack damage, attack-speed cooldowns).
 const DUR = [59, 131, 250, 1561];
 const SPEED = [2, 4, 6, 8];
-const SWORD_DMG = [4, 5, 6, 7], AXE_DMG = [7, 9, 9, 9], PICK_DMG = [2, 3, 4, 5];
-const AXE_CD = [1.25, 1.15, 1.1, 1.0];
+const SWORD_DMG = [4, 5, 6, 7], AXE_DMG = [7, 9, 9, 9], PICK_DMG = [2, 3, 4, 5], SHOVEL_DMG = [2.5, 3.5, 4.5, 5.5];
+const AXE_CD = [1.25, 1.25, 1.11, 1.0];
+const HOE_CD = [1.0, 0.5, 1 / 3, 0.25]; // hoe attack speed 1/2/3/4 -> cooldown 20/speed ticks
 for (let t = 0; t < 4; t++) {
   const cap = s => s[0].toUpperCase() + s.slice(1);
   const tn = cap(TIERS[t]) + ' ';
   defI(toolId(t, 0), tn + 'Pickaxe', T[`t_${t}_pickaxe`], { stack: 1, tool: { kind: 'pickaxe', tier: t + 1, dmg: PICK_DMG[t], dur: DUR[t], speed: SPEED[t], cd: 0.83 } });
   defI(toolId(t, 1), tn + 'Axe', T[`t_${t}_axe`], { stack: 1, tool: { kind: 'axe', tier: t + 1, dmg: AXE_DMG[t], dur: DUR[t], speed: SPEED[t], cd: AXE_CD[t] } });
-  defI(toolId(t, 2), tn + 'Shovel', T[`t_${t}_shovel`], { stack: 1, tool: { kind: 'shovel', tier: t + 1, dmg: 1.5 + t, dur: DUR[t], speed: SPEED[t], cd: 1.0 } });
+  defI(toolId(t, 2), tn + 'Shovel', T[`t_${t}_shovel`], { stack: 1, tool: { kind: 'shovel', tier: t + 1, dmg: SHOVEL_DMG[t], dur: DUR[t], speed: SPEED[t], cd: 1.0 } });
   defI(toolId(t, 3), tn + 'Sword', T[`t_${t}_sword`], { stack: 1, tool: { kind: 'sword', tier: t + 1, dmg: SWORD_DMG[t], dur: DUR[t], speed: 1.5, cd: 0.625 } });
-  defI(toolId(t, 4), tn + 'Hoe', T[`t_${t}_hoe`], { stack: 1, tool: { kind: 'hoe', tier: t + 1, dmg: 1 + t, dur: DUR[t], speed: 1, cd: 1.0 } });
+  // hoe attack damage is flat 1 regardless of material in vanilla — only
+  // durability and attack-speed (recovery time) scale with tier
+  defI(toolId(t, 4), tn + 'Hoe', T[`t_${t}_hoe`], { stack: 1, tool: { kind: 'hoe', tier: t + 1, dmg: 1, dur: DUR[t], speed: 1, cd: HOE_CD[t] } });
 }
 const ARMOR_NAMES = ['Helmet', 'Chestplate', 'Leggings', 'Boots'];
-const IRON_PTS = [2, 6, 5, 2], LEATHER_PTS = [1, 3, 2, 1];
+const IRON_PTS = [2, 6, 5, 2], LEATHER_PTS = [1, 3, 2, 1], DIAMOND_PTS = [3, 8, 6, 3];
+// durability is per-slot (helmet/chest/legs/boots need different amounts of
+// material and so take different damage before breaking), not a single flat
+// number per material — chest > legs > boots > helmet, consistently
+const IRON_DUR = [165, 240, 225, 195], LEATHER_DUR = [55, 80, 75, 65], DIAMOND_DUR = [363, 528, 495, 429];
 for (let s = 0; s < 4; s++) {
-  defI(armorId('iron', s), 'Iron ' + ARMOR_NAMES[s], T[`a_iron_${s}`], { stack: 1, armor: { slot: s, pts: IRON_PTS[s], dur: 220 } });
-  defI(armorId('leather', s), 'Leather ' + ARMOR_NAMES[s], T[`a_leather_${s}`], { stack: 1, armor: { slot: s, pts: LEATHER_PTS[s], dur: 70 } });
+  defI(armorId('iron', s), 'Iron ' + ARMOR_NAMES[s], T[`a_iron_${s}`], { stack: 1, armor: { slot: s, pts: IRON_PTS[s], dur: IRON_DUR[s] } });
+  defI(armorId('leather', s), 'Leather ' + ARMOR_NAMES[s], T[`a_leather_${s}`], { stack: 1, armor: { slot: s, pts: LEATHER_PTS[s], dur: LEATHER_DUR[s] } });
+  defI(armorId('diamond', s), 'Diamond ' + ARMOR_NAMES[s], T[`a_diamond_${s}`], { stack: 1, armor: { slot: s, pts: DIAMOND_PTS[s], dur: DIAMOND_DUR[s] } });
 }
 
 // ---- crafting --------------------------------------------------------------
@@ -212,7 +223,7 @@ for (let t = 0; t < 4; t++) {
   defR([[M], [M], [S]], toolId(t, 3));                    // sword
   defR([[M, M], [0, S], [0, S]], toolId(t, 4));           // hoe
 }
-for (const [mat, matId] of [['iron', I.IRON_INGOT], ['leather', I.LEATHER]]) {
+for (const [mat, matId] of [['iron', I.IRON_INGOT], ['leather', I.LEATHER], ['diamond', I.DIAMOND]]) {
   const M = matId;
   defR([[M, M, M], [M, 0, M]], armorId(mat, 0));
   defR([[M, 0, M], [M, M, M], [M, M, M]], armorId(mat, 1));

@@ -184,6 +184,7 @@ for (let t = 0; t < 4; t++) for (const k of TOOL_KINDS)
   def(`t_${t}_${k}`, p => { p.clearAll(); toolIcon(p, k, TOOL_MATS[t]); });
 for (let s = 0; s < 4; s++) def(`a_iron_${s}`, p => { p.clearAll(); armorIcon(p, s, '#d8d8d8'); });
 for (let s = 0; s < 4; s++) def(`a_leather_${s}`, p => { p.clearAll(); armorIcon(p, s, '#a0562b'); });
+for (let s = 0; s < 4; s++) def(`a_diamond_${s}`, p => { p.clearAll(); armorIcon(p, s, '#4fdbd6'); });
 
 // ---- build the atlas -------------------------------------------------------
 function makePixelAPI(ctx, ox, oy, seed) {

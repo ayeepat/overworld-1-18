@@ -300,11 +300,20 @@ export class WorldGen {
         const x0 = bx - (size[0] >> 1), z0 = bz - (size[1] >> 1);
         const foot = [x0, z0, x0 + size[0] - 1, z0 + size[1] - 1];
         if (occupied.some(o => overlaps(o, foot))) continue;
-        const h1 = this.colInfo(x0, z0).h, h2 = this.colInfo(x0 + size[0], z0 + size[1]).h;
-        if (Math.abs(h1 - groundY) > 4 || Math.abs(h2 - groundY) > 4) continue;
+        // sample this building's OWN footprint (not just the village-wide
+        // groundY) so its floor gets built at the real local height — using
+        // the shared village height here let buildings up to 28 blocks from
+        // center sit on terrain up to 4 blocks off from it, producing houses
+        // that were floating above (or half-buried in) the actual ground,
+        // with a cliff right at the door where the path met real terrain
+        const corners = [[x0, z0], [x0 + size[0] - 1, z0], [x0, z0 + size[1] - 1], [x0 + size[0] - 1, z0 + size[1] - 1]]
+          .map(([cx, cz]) => this.colInfo(cx, cz).h);
+        const localY = Math.round(corners.reduce((a, b2) => a + b2, 0) / corners.length);
+        if (Math.max(...corners) - Math.min(...corners) > 3) continue; // footprint itself too uneven
+        if (Math.abs(localY - groundY) > 6) continue; // keep buildings from scattering to wildly different elevations
         occupied.push(foot);
         const job = type === 'profession' ? JOB_SITES[(vrng() * JOB_SITES.length) | 0] : null;
-        const b = { type, x0, z0, w: size[0], d: size[1], job, door: { x: x0 + (size[0] >> 1), z: z0 - 1 } };
+        const b = { type, x0, z0, w: size[0], d: size[1], job, y: localY, door: { x: x0 + (size[0] >> 1), z: z0 - 1 } };
         buildings.push(b);
         return b;
       }
@@ -324,9 +333,14 @@ export class WorldGen {
         beds++;
         const bedSpot = { x: b.x0 + 1, z: b.z0 + b.d - 2, door: { x: b.door.x, z: b.door.z } };
         const n = b.type === 'house' ? 2 : 1;
-        for (let i = 0; i < n; i++) villagerSpawns.push({ x: b.x0 + 1 + i, z: b.door.z + 1, profession: null, bed: bedSpot });
+        // spawn on the widened doorway's second leaf (door.x+1), which starts
+        // open — the main door (door.x) defaults closed/solid like any real
+        // door, so spawning there embedded villagers in it. A second spawn
+        // steps one tile further into the (cleared, non-edge) interior
+        // instead of stacking both entities on the same open tile.
+        for (let i = 0; i < n; i++) villagerSpawns.push({ x: b.door.x + 1, z: b.door.z + 1 + i, y: b.y, profession: null, bed: bedSpot });
       } else if (b.type === 'profession') {
-        villagerSpawns.push({ x: b.door.x, z: b.door.z + 1, profession: b.job, bed: null });
+        villagerSpawns.push({ x: b.door.x + 1, z: b.door.z + 1, y: b.y, profession: b.job, bed: null });
       }
     }
     return { wx, wz, groundY, buildings, beds, villagerSpawns, hay, spawned: false };
@@ -335,31 +349,59 @@ export class WorldGen {
   placeVillageInChunk(chunk, world, v, sbW) {
     this.placeWell(sbW, v.wx, v.wz, v.groundY);
     for (const b of v.buildings) {
-      if (b.type === 'hut') this.buildHutBP(sbW, world, b, v.groundY);
-      else if (b.type === 'house') this.buildHouseBP(sbW, world, b, v.groundY);
-      else if (b.type === 'garden') this.buildGardenBP(sbW, world, b, v.groundY);
-      else if (b.type === 'profession') this.buildProfessionBP(sbW, world, b, v.groundY);
+      if (b.type === 'hut') this.buildHutBP(sbW, world, b);
+      else if (b.type === 'house') this.buildHouseBP(sbW, world, b);
+      else if (b.type === 'garden') this.buildGardenBP(sbW, world, b);
+      else if (b.type === 'profession') this.buildProfessionBP(sbW, world, b);
       this.drawPath(sbW, b.door.x, b.door.z, v.wx, v.wz);
     }
     this.placeHay(sbW, v.hay.x, v.hay.z, this.colInfo(v.hay.x, v.hay.z).h);
+    // golems are 1.4 blocks wide — even perfectly cell-centered, that's just
+    // wide enough to clip a single stray terrain bump (e.g. a 1-block grass
+    // mound) at the edge of their footprint. Every per-axis collision check
+    // then rediscovers that same sliver overlap and blocks that axis, so the
+    // golem can never move in ANY direction — a permanent deadlock. Flatten
+    // a small pad at each golem spawn spot, the same way the well's footprint
+    // is flattened, so there's nothing there to clip. This must run outside
+    // the v.spawned gate below since the spawn coordinates may fall in a
+    // different chunk than whichever one first triggers entity queuing.
+    const flattenFooting = (cx, cz, cy) => {
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        sbW(cx + dx, cy - 1, cz + dz, B.COBBLE);
+        for (let dy = 0; dy <= 3; dy++) sbW(cx + dx, cy + dy, cz + dz, B.AIR);
+      }
+    };
+    const g1x = Math.floor(v.wx + 2.5), g1z = Math.floor(v.wz + 0.5);
+    const g1y = this.colInfo(g1x, g1z).h;
+    flattenFooting(g1x, g1z, g1y);
+    const g2x = Math.floor(v.wx - 2.5), g2z = Math.floor(v.wz - 0.5);
+    const g2y = this.colInfo(g2x, g2z).h;
+    flattenFooting(g2x, g2z, g2y);
     if (!v.spawned) {
       v.spawned = true;
       for (const vs of v.villagerSpawns) {
-        const h = this.colInfo(vs.x, vs.z).h;
-        world.spawnQueue.push({ type: 'villager', x: vs.x + 0.5, y: h + 1, z: vs.z + 0.5, profession: vs.profession, bed: vs.bed, village: v });
+        // spawn 1 block above the building's own constructed floor (vs.y),
+        // not the raw pre-construction terrain height — those can differ by
+        // a block on sloped ground, which spawned villagers embedded in the
+        // floor/wall they were built on top of
+        world.spawnQueue.push({ type: 'villager', x: vs.x + 0.5, y: vs.y + 1, z: vs.z + 0.5, profession: vs.profession, bed: vs.bed, village: v });
       }
       if (v.beds >= 3 && v.villagerSpawns.length >= 3) {
-        world.spawnQueue.push({ type: 'iron_golem', x: v.wx + 2.5, y: v.groundY + 1, z: v.wz + 0.5, village: v });
-        if (Math.random() < 0.3) world.spawnQueue.push({ type: 'iron_golem', x: v.wx - 2.5, y: v.groundY + 1, z: v.wz - 0.5, village: v });
+        world.spawnQueue.push({ type: 'iron_golem', x: v.wx + 2.5, y: g1y + 1, z: v.wz + 0.5, village: v });
+        if (Math.random() < 0.3) world.spawnQueue.push({ type: 'iron_golem', x: v.wx - 2.5, y: g2y + 1, z: v.wz - 0.5, village: v });
       }
     }
   }
 
   placeWell(sbW, wx, wz, groundY) {
+    // rim is a single block tall (matching vanilla's well curb) — a 2-tall
+    // rim exceeded the ~1-block auto-hop mobs/villagers have, and golems
+    // spawn right beside the well, so they used to walk straight into it
+    // and never get anywhere
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
       const x = wx + dx, z = wz + dz;
       if (dx === 0 && dz === 0) { sbW(x, groundY - 1, z, B.WATER); sbW(x, groundY, z, B.AIR); }
-      else { sbW(x, groundY, z, B.COBBLE); sbW(x, groundY + 1, z, B.COBBLE); }
+      else { sbW(x, groundY, z, B.COBBLE); sbW(x, groundY + 1, z, B.AIR); }
     }
   }
 
@@ -381,8 +423,8 @@ export class WorldGen {
     }
   }
 
-  buildFoundationAndShell(sbW, b, groundY, wallTopDy) {
-    const { x0, z0, w, d } = b, y = groundY;
+  buildFoundationAndShell(sbW, b, wallTopDy) {
+    const { x0, z0, w, d, y } = b;
     for (let dx = 0; dx < w; dx++) for (let dz = 0; dz < d; dz++) {
       const x = x0 + dx, z = z0 + dz;
       sbW(x, y - 1, z, B.DIRT); sbW(x, y - 2, z, B.DIRT);
@@ -409,9 +451,9 @@ export class WorldGen {
   }
 
   // 5x5, single door, one bed — the smallest village dwelling
-  buildHutBP(sbW, world, b, groundY) {
-    const { x0, z0, w, d } = b, y = groundY;
-    this.buildFoundationAndShell(sbW, b, groundY, 2);
+  buildHutBP(sbW, world, b) {
+    const { x0, z0, w, d, y } = b;
+    this.buildFoundationAndShell(sbW, b, 2);
     for (let dx = 0; dx < w; dx++) for (let dz = 0; dz < d; dz++) sbW(x0 + dx, y + 3, z0 + dz, B.PLANKS);
     const doorX = b.door.x, doorZ = z0;
     sbW(doorX, y + 1, doorZ, B.DOOR); sbW(doorX, y + 2, doorZ, B.DOOR);
@@ -425,9 +467,9 @@ export class WorldGen {
   }
 
   // 7x6, bed + chest, a raised gable ridge along the long axis for a pitched-roof look
-  buildHouseBP(sbW, world, b, groundY) {
-    const { x0, z0, w, d } = b, y = groundY;
-    this.buildFoundationAndShell(sbW, b, groundY, 3);
+  buildHouseBP(sbW, world, b) {
+    const { x0, z0, w, d, y } = b;
+    this.buildFoundationAndShell(sbW, b, 3);
     for (let dx = 0; dx < w; dx++) for (let dz = 0; dz < d; dz++) sbW(x0 + dx, y + 4, z0 + dz, B.PLANKS);
     if (w >= d) for (let dx = 1; dx < w - 1; dx++) sbW(x0 + dx, y + 5, z0 + (d >> 1), B.PLANKS);
     else for (let dz = 1; dz < d - 1; dz++) sbW(x0 + (w >> 1), y + 5, z0 + dz, B.PLANKS);
@@ -452,8 +494,8 @@ export class WorldGen {
 
   // bordered 9x9 crop plot: oak-log fence, a center water source hydrating the
   // whole plot, wheat planted at a mix of growth stages
-  buildGardenBP(sbW, world, b, groundY) {
-    const { x0, z0, w, d } = b, y = groundY;
+  buildGardenBP(sbW, world, b) {
+    const { x0, z0, w, d, y } = b;
     const cx = x0 + (w >> 1), cz = z0 + (d >> 1);
     const r = mulberry32(this.seed ^ (x0 * 7919) ^ (z0 * 104729) ^ 0xFA12);
     for (let dx = 0; dx < w; dx++) for (let dz = 0; dz < d; dz++) {
@@ -469,9 +511,9 @@ export class WorldGen {
   }
 
   // 5x5 with the assigned profession's job-site block inside
-  buildProfessionBP(sbW, world, b, groundY) {
-    const { x0, z0, w, d, job } = b, y = groundY;
-    this.buildFoundationAndShell(sbW, b, groundY, 2);
+  buildProfessionBP(sbW, world, b) {
+    const { x0, z0, w, d, job, y } = b;
+    this.buildFoundationAndShell(sbW, b, 2);
     for (let dx = 0; dx < w; dx++) for (let dz = 0; dz < d; dz++) sbW(x0 + dx, y + 3, z0 + dz, B.PLANKS);
     const doorX = b.door.x, doorZ = z0;
     sbW(doorX, y + 1, doorZ, B.DOOR); sbW(doorX, y + 2, doorZ, B.DOOR);

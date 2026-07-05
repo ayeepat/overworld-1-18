@@ -30,6 +30,8 @@
   input, select { font-family:inherit; font-size:15px; padding:8px 12px; width:320px;
     background:#111; color:#eee; border:2px solid #888; }
   label { font-size:13px; color:#bbb; }
+  .togglerow { display:flex; align-items:center; gap:8px; font-size:15px; color:#eee; cursor:pointer; }
+  .togglerow input { width:auto; padding:0; cursor:pointer; }
 
   #hud { position:fixed; inset:0; pointer-events:none; z-index:10; }
   #crosshair { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -166,6 +168,7 @@
 
 <div id="pause" class="screen hidden">
   <h1 style="font-size:30px">Game Paused</h1>
+  <label class="togglerow"><input type="checkbox" id="keepinvchk"> Keep Inventory on Death</label>
   <button id="resumebtn">Resume Game</button>
   <button id="quitbtn">Save and Quit to Title</button>
 </div>

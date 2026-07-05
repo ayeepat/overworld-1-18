@@ -27,6 +27,7 @@ export class Player {
     this.stepAcc = 0;
     this.onHurt = null; // UI hook
     this.deathCause = '';
+    this.keepInventory = false; // pause-menu toggle: skip dropping items on death
   }
 
   heldStack() { return this.inv[this.sel]; }
@@ -148,7 +149,7 @@ export class Player {
     this.deathCause = source;
     this.deathPos = { x: this.pos.x, y: this.pos.y, z: this.pos.z };
     const w = this.world;
-    if (w.dropItem) {
+    if (w.dropItem && !this.keepInventory) {
       const dropAll = arr => arr.forEach((s, i) => {
         if (s) { w.dropItem(this.pos.x, this.pos.y + 1, this.pos.z, s); arr[i] = null; }
       });
@@ -221,6 +222,7 @@ export class Player {
 
     let speed = this.sneaking ? 1.3 : this.sprinting ? 5.6 : 4.32;
     if (this.inWater) speed *= 0.55;
+    else if (this.inLava) speed *= 0.4; // lava is thicker than water — more sluggish
     if (this.blocking) speed = Math.min(speed, 1.3);
     let mx = 0, mz = 0;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
@@ -230,21 +232,26 @@ export class Player {
     if (input.r) { mx += cy; mz -= sy; }
     const ml = Math.hypot(mx, mz);
     if (ml > 0) { mx = mx / ml * speed; mz = mz / ml * speed; }
-    const accel = this.onGround ? 14 : (this.inWater ? 6 : 3.5);
+    const accel = this.onGround ? 14 : this.inWater ? 6 : this.inLava ? 4 : 3.5;
     this.vel.x += (mx - this.vel.x) * Math.min(1, accel * dt);
     this.vel.z += (mz - this.vel.z) * Math.min(1, accel * dt);
 
+    // swimming: lava behaves like water but more sluggish (lower rise rate/cap),
+    // matching vanilla's heavier lava drag while still letting you climb out
     if (input.jump) {
       if (this.inWater) this.vel.y = Math.min(this.vel.y + 24 * dt, 3.2);
+      else if (this.inLava) this.vel.y = Math.min(this.vel.y + 20 * dt, 1.4);
       else if (this.onGround) {
         this.vel.y = 9;
         this.exhaust(this.sprinting ? 0.2 : 0.05);
       }
     }
-    // gravity
-    const g = this.inWater ? 10 : 32;
+    // gravity (lava's rise rate above must stay well above this or players can
+    // never gain net altitude and would hang motionless mid-pool forever)
+    const g = this.inWater ? 10 : this.inLava ? 12 : 32;
     this.vel.y -= g * dt;
     if (this.inWater) this.vel.y = Math.max(this.vel.y, -3);
+    else if (this.inLava) this.vel.y = Math.max(this.vel.y, -2);
 
     const w2 = this.w / 2;
     const wasGround = this.onGround;
@@ -284,9 +291,14 @@ export class Player {
     };
     tryAxis('x'); tryAxis('z');
 
-    // fluid state
+    // fluid state — sampled at the feet (not feet+offset): buoyancy/gravity for
+    // this frame is driven by inWater/inLava (see above), so the flag must stay
+    // true until the feet themselves clear the fluid's top surface. Sampling
+    // higher than the feet flips it false ~0.4 blocks too early, cutting
+    // buoyancy before the player's box can rise above a shore flush with the
+    // fluid's surface — leaving them permanently unable to climb out.
     const bx = Math.floor(this.pos.x), bz = Math.floor(this.pos.z);
-    const bodyId = world.getBlock(bx, Math.floor(this.pos.y + 0.4), bz);
+    const bodyId = world.getBlock(bx, Math.floor(this.pos.y), bz);
     const wasInWater = this.inWater;
     this.inWater = bodyId === B.WATER;
     this.inLava = bodyId === B.LAVA;
